@@ -41,12 +41,12 @@ if st.session_state.cut_list:
 # --- OPTIMIZATION LOGIC ---
 def solve_packing(cuts):
     SHEET_W, SHEET_H = 72, 84
-    packer = newPacker(mode=PackingMode.Offline, 
-                       bin_algo=PackingMode.GuillotineBottomLeftFit, 
-                       rotation=True)
+    
+    # FIXED: We removed the invalid "bin_algo" setting
+    packer = newPacker(mode=PackingMode.Offline, rotation=True)
     
     # Add enough bins (sheets) to cover likely demand
-    for _ in range(20):
+    for _ in range(50):
         packer.add_bin(SHEET_W, SHEET_H)
     
     for i, (w, h) in enumerate(cuts):
@@ -107,5 +107,6 @@ if len(st.session_state.cut_list) > 0:
                     st.pyplot(fig)
 else:
     st.info("Add items using the sidebar to start.")
+
 
 
