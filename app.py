@@ -106,4 +106,6 @@ if len(st.session_state.cut_list) > 0:
                 with cols[i % 2]:
                     st.pyplot(fig)
 else:
-    st.info("Add items using the sidebar to start."
+    st.info("Add items using the sidebar to start.")
+
+
