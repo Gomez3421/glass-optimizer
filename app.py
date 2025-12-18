@@ -1,7 +1,7 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from rectpack import newPacker, PackingMode, MaxRectsBssf
+from rectpack import newPacker, PackingMode, GuillotineBssf
 import pandas as pd
 
 # --------------------------------------------------
@@ -86,34 +86,33 @@ if st.session_state.cut_list:
         st.experimental_rerun()
 
 # --------------------------------------------------
-# PACKING SOLVER
+# PACKING SOLVER WITH INTEGER SCALING
 # --------------------------------------------------
-def solve_packing(cuts, SHEET_W, SHEET_H):
-    # Sort pieces by area (largest first)
-    sorted_cuts = sorted(
-        enumerate(cuts),
-        key=lambda x: x[1][0] * x[1][1],
-        reverse=True
-    )
+SCALE = 10  # Multiply dimensions to avoid floating point issues
 
-    packer = newPacker(
-        mode=PackingMode.Offline,
-        rotation=True,
-        pack_algo=MaxRectsBssf
-    )
+def solve_packing(cuts, SHEET_W, SHEET_H):
+    # Convert all dimensions to integers
+    cuts_int = [(int(w*SCALE), int(h*SCALE)) for w, h in cuts]
+    sheet_w_int = int(SHEET_W * SCALE)
+    sheet_h_int = int(SHEET_H * SCALE)
+
+    # Sort by area (largest first)
+    sorted_cuts = sorted(enumerate(cuts_int), key=lambda x: x[1][0]*x[1][1], reverse=True)
+
+    packer = newPacker(mode=PackingMode.Offline, rotation=True, pack_algo=GuillotineBssf)
 
     # Add rectangles
     for rid, (w, h) in sorted_cuts:
         packer.add_rect(w, h, rid=rid)
 
-    # Start with one bin
-    packer.add_bin(SHEET_W, SHEET_H)
+    # Add initial bin
+    packer.add_bin(sheet_w_int, sheet_h_int)
     packer.pack()
 
-    # Add new bins dynamically for leftovers
+    # Dynamically add new bins for leftover pieces
     leftovers = [r for abin in packer for r in abin if not abin]
     while leftovers:
-        packer.add_bin(SHEET_W, SHEET_H)
+        packer.add_bin(sheet_w_int, sheet_h_int)
         packer.pack()
         leftovers = [r for abin in packer for r in abin if not abin]
 
@@ -132,61 +131,36 @@ def draw_results(packer, SHEET_W, SHEET_H, original_cuts):
 
         fig, ax = plt.subplots()
         fig.set_size_inches(8, 8 * (SHEET_H / SHEET_W))
-
         ax.set_xlim(0, SHEET_W)
         ax.set_ylim(0, SHEET_H)
 
         # Sheet outline
         ax.add_patch(
-            patches.Rectangle(
-                (0, 0),
-                SHEET_W,
-                SHEET_H,
-                linewidth=2,
-                edgecolor="black",
-                facecolor="#f0f0f0"
-            )
+            patches.Rectangle((0,0), SHEET_W, SHEET_H, linewidth=2, edgecolor="black", facecolor="#f0f0f0")
         )
 
         used_area = 0
         count = 0
 
         for rect in abin:
-            x, y = rect.x, rect.y
-            w, h = rect.width, rect.height
+            x, y = rect.x / SCALE, rect.y / SCALE
+            w, h = rect.width / SCALE, rect.height / SCALE
             orig_w, orig_h = original_cuts[rect.rid]
 
             used_area += w * h
             count += 1
 
             ax.add_patch(
-                patches.Rectangle(
-                    (x, y),
-                    w,
-                    h,
-                    linewidth=1,
-                    edgecolor="white",
-                    facecolor="#3b82f6"
-                )
+                patches.Rectangle((x, y), w, h, linewidth=1, edgecolor="white", facecolor="#3b82f6")
             )
 
             if w > 5 and h > 5:
                 rotated = (w != orig_w or h != orig_h)
                 label = f"{orig_w:g}x{orig_h:g}" + (" ↺" if rotated else "")
-                ax.text(
-                    x + w / 2,
-                    y + h / 2,
-                    label,
-                    ha="center",
-                    va="center",
-                    fontsize=8,
-                    color="white",
-                    fontweight="bold"
-                )
+                ax.text(x + w/2, y + h/2, label, ha="center", va="center", fontsize=8, color="white", fontweight="bold")
 
         total_area = SHEET_W * SHEET_H
         waste = 100 * (1 - used_area / total_area)
-
         summary.append({
             "Sheet #": idx + 1,
             "Items Packed": count,
@@ -196,9 +170,7 @@ def draw_results(packer, SHEET_W, SHEET_H, original_cuts):
             "Waste": f"{waste:.1f}%"
         })
 
-        ax.set_title(
-            f"Sheet #{idx + 1} ({SHEET_W}x{SHEET_H} | Waste: {waste:.1f}%)"
-        )
+        ax.set_title(f"Sheet #{idx+1} ({SHEET_W}x{SHEET_H} | Waste: {waste:.1f}%)")
         ax.axis("off")
         figures.append(fig)
 
@@ -214,16 +186,10 @@ if st.session_state.cut_list:
             figs, summary = draw_results(packer, sheet_w, sheet_h, st.session_state.cut_list)
             packed = sum(len(b) for b in packer)
 
-            st.success(
-                f"Optimization complete: {packed} of {len(st.session_state.cut_list)} "
-                f"pieces packed using {len(figs)} sheet(s)."
-            )
+            st.success(f"Optimization complete: {packed} of {len(st.session_state.cut_list)} pieces packed using {len(figs)} sheet(s).")
 
             if packed < len(st.session_state.cut_list):
-                st.error(
-                    f"{len(st.session_state.cut_list) - packed} "
-                    "piece(s) could not be packed."
-                )
+                st.error(f"{len(st.session_state.cut_list) - packed} piece(s) could not be packed.")
 
             if summary:
                 st.header("✨ Optimization Summary")
@@ -232,12 +198,7 @@ if st.session_state.cut_list:
                 total_stock = df["Total Area (in²)"].sum()
                 util = 100 * total_used / total_stock
 
-                st.metric(
-                    f"Overall Utilization ({len(figs)} Sheets)",
-                    f"{util:.2f}%",
-                    f"Waste: {100 - util:.2f}%"
-                )
-
+                st.metric(f"Overall Utilization ({len(figs)} Sheets)", f"{util:.2f}%", f"Waste: {100 - util:.2f}%")
                 st.dataframe(df.set_index("Sheet #"), use_container_width=True)
 
             st.header("🖼️ Cutting Plan Visualizations")
@@ -245,9 +206,5 @@ if st.session_state.cut_list:
             for i, fig in enumerate(figs):
                 with cols[i % 2]:
                     st.pyplot(fig)
-
 else:
-    st.info(
-        "Set sheet dimensions, then upload a file or add pieces "
-        "to start optimization."
-    )
+    st.info("Set sheet dimensions, then upload a file or add pieces to start optimization.")
