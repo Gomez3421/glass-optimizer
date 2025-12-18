@@ -31,19 +31,27 @@ if "cut_list" not in st.session_state:
     st.session_state.cut_list = []
 
 # --------------------------------------------------
-# FILE PROCESSING
+# FILE PROCESSING (Updated for messy HxWxT files)
 # --------------------------------------------------
 if uploaded_file is not None:
     if st.sidebar.button("Process Uploaded File"):
         st.session_state.cut_list = []
         for line in uploaded_file.getvalue().decode("utf-8").splitlines():
-            if not line.strip():
-                continue
-            w, h, *q = [x.strip() for x in line.split(",")]
-            qty = int(q[0]) if q else 1
-            for _ in range(qty):
-                st.session_state.cut_list.append((float(w), float(h)))
-        st.sidebar.success("File processed")
+            line = line.strip()
+            if not line or line.startswith("#") or line.upper().startswith("COMMENTS"):
+                continue  # skip empty/comment lines
+            parts = line.split(",")
+            if len(parts) < 2:
+                continue  # skip invalid lines
+            try:
+                h = float(parts[0].strip())   # original H
+                w = float(parts[1].strip())   # original W
+                qty = int(float(parts[2].strip())) if len(parts) >= 3 else 1
+                for _ in range(qty):
+                    st.session_state.cut_list.append((w, h))  # WxH only
+            except ValueError:
+                continue  # skip non-numeric lines
+        st.sidebar.success(f"Processed {len(st.session_state.cut_list)} cuts")
 
 # --------------------------------------------------
 # MANUAL INPUT
