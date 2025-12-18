@@ -86,9 +86,7 @@ if st.session_state.cut_list:
 # GUARANTEED ROW-BY-ROW PLACEMENT
 # --------------------------------------------------
 def place_cuts_row_by_row(cuts, SHEET_W, SHEET_H):
-    # Sort cuts by height descending (to minimize vertical waste)
     sorted_cuts = sorted(cuts, key=lambda x: max(x[0], x[1]), reverse=True)
-
     placements = []
     y_offset = 0
     row_height = 0
@@ -100,7 +98,6 @@ def place_cuts_row_by_row(cuts, SHEET_W, SHEET_H):
             w, h = h, w
 
         if x_offset + w > SHEET_W:
-            # move to next row
             x_offset = 0
             y_offset += row_height
             row_height = 0
@@ -116,13 +113,21 @@ def place_cuts_row_by_row(cuts, SHEET_W, SHEET_H):
     return placements
 
 # --------------------------------------------------
-# VISUALIZATION
+# VISUALIZATION WITH AUTO-SCALING
 # --------------------------------------------------
 def draw_sheet(placements, SHEET_W, SHEET_H):
+    # Auto-scale to fit screen nicely
+    MAX_DISPLAY_WIDTH = 12   # max width in inches
+    MAX_DISPLAY_HEIGHT = 8   # max height in inches
+    scale_w = MAX_DISPLAY_WIDTH / SHEET_W
+    scale_h = MAX_DISPLAY_HEIGHT / SHEET_H
+    scale = min(scale_w, scale_h)
+
     fig, ax = plt.subplots()
-    fig.set_size_inches(20, 20 * (SHEET_H / SHEET_W))
+    fig.set_size_inches(SHEET_W * scale, SHEET_H * scale)
     ax.set_xlim(0, SHEET_W)
     ax.set_ylim(0, SHEET_H)
+    ax.set_aspect('equal')
 
     # Sheet outline
     ax.add_patch(
@@ -158,6 +163,3 @@ if st.session_state.cut_list:
                 st.metric("Sheet Utilization", f"{utilization:.2f}%", f"Waste: {100 - utilization:.2f}%")
 else:
     st.info("Set sheet dimensions, then upload a file or add pieces to start optimization.")
-
-
-
