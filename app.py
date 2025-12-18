@@ -120,7 +120,7 @@ def place_cuts_row_by_row(cuts, SHEET_W, SHEET_H):
 # --------------------------------------------------
 def draw_sheet(placements, SHEET_W, SHEET_H):
     fig, ax = plt.subplots()
-    fig.set_size_inches(8, 8 * (SHEET_H / SHEET_W))
+    fig.set_size_inches(12, 12 * (SHEET_H / SHEET_W))
     ax.set_xlim(0, SHEET_W)
     ax.set_ylim(0, SHEET_H)
 
@@ -158,3 +158,4 @@ if st.session_state.cut_list:
                 st.metric("Sheet Utilization", f"{utilization:.2f}%", f"Waste: {100 - utilization:.2f}%")
 else:
     st.info("Set sheet dimensions, then upload a file or add pieces to start optimization.")
+
