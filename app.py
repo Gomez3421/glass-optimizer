@@ -169,11 +169,31 @@ if st.session_state.cut_list:
             total_packed = sum(len(sheet) for sheet in sheets)
             st.success(f"Optimization complete: {total_packed} pieces packed across {len(sheets)} sheet(s).")
 
-            # Overall utilization summary
+            # Overall metrics
             total_used = sum(w*h for sheet in sheets for x,y,w,h in sheet)
             total_area = sheet_w*sheet_h*len(sheets)
             utilization = 100 * total_used / total_area
             st.metric("Overall Utilization", f"{utilization:.2f}%", f"Waste: {100 - utilization:.2f}%")
+
+            # Individual sheet summary
+            sheet_summary = []
+            for idx, sheet in enumerate(sheets):
+                used_area = sum(w*h for x, y, w, h in sheet)
+                total_area_sheet = sheet_w * sheet_h
+                util = 100 * used_area / total_area_sheet
+                waste = 100 - util
+                sheet_summary.append({
+                    "Sheet #": idx + 1,
+                    "Pieces Packed": len(sheet),
+                    "Used Area (in²)": used_area,
+                    "Total Area (in²)": total_area_sheet,
+                    "Utilization (%)": round(util, 2),
+                    "Waste (%)": round(waste, 2)
+                })
+
+            df_summary = pd.DataFrame(sheet_summary)
+            st.header("📊 Sheet Utilization Summary")
+            st.dataframe(df_summary.set_index("Sheet #"), use_container_width=True)
 
             # Display all sheets
             st.header("🖼️ Cutting Plan Visualizations")
