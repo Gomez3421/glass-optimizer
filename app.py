@@ -83,83 +83,101 @@ if st.session_state.cut_list:
         st.experimental_rerun()
 
 # --------------------------------------------------
-# GUARANTEED ROW-BY-ROW PLACEMENT
+# MULTI-SHEET PLACEMENT
 # --------------------------------------------------
-def place_cuts_row_by_row(cuts, SHEET_W, SHEET_H):
-    sorted_cuts = sorted(cuts, key=lambda x: max(x[0], x[1]), reverse=True)
-    placements = []
-    y_offset = 0
-    row_height = 0
-    x_offset = 0
+def place_cuts_multi_sheet(cuts, SHEET_W, SHEET_H):
+    sheets = []
+    remaining_cuts = cuts.copy()
+    
+    while remaining_cuts:
+        placements = []
+        y_offset = 0
+        row_height = 0
+        x_offset = 0
+        new_remaining = []
 
-    for w, h in sorted_cuts:
-        # Rotate if it fits better
-        if w > h and w > SHEET_W and h <= SHEET_W:
-            w, h = h, w
+        for w, h in remaining_cuts:
+            # Rotate if it fits better
+            if w > h and w > SHEET_W and h <= SHEET_W:
+                w, h = h, w
 
-        if x_offset + w > SHEET_W:
-            x_offset = 0
-            y_offset += row_height
-            row_height = 0
+            if x_offset + w > SHEET_W:
+                x_offset = 0
+                y_offset += row_height
+                row_height = 0
 
-        if y_offset + h > SHEET_H:
-            st.error(f"Cannot fit piece {w}x{h} on the sheet. Increase sheet size.")
-            continue
+            if y_offset + h > SHEET_H:
+                # Move to next sheet
+                new_remaining.append((w, h))
+                continue
 
-        placements.append((x_offset, y_offset, w, h))
-        x_offset += w
-        row_height = max(row_height, h)
+            placements.append((x_offset, y_offset, w, h))
+            x_offset += w
+            row_height = max(row_height, h)
 
-    return placements
+        sheets.append(placements)
+        remaining_cuts = new_remaining
+
+    return sheets
 
 # --------------------------------------------------
 # VISUALIZATION WITH AUTO-SCALING
 # --------------------------------------------------
-def draw_sheet(placements, SHEET_W, SHEET_H):
-    # Auto-scale to fit screen nicely
-    MAX_DISPLAY_WIDTH = 12   # max width in inches
-    MAX_DISPLAY_HEIGHT = 8   # max height in inches
-    scale_w = MAX_DISPLAY_WIDTH / SHEET_W
-    scale_h = MAX_DISPLAY_HEIGHT / SHEET_H
-    scale = min(scale_w, scale_h)
+def draw_sheets_multi(sheets, SHEET_W, SHEET_H):
+    figs = []
+    MAX_DISPLAY_WIDTH = 12
+    MAX_DISPLAY_HEIGHT = 8
 
-    fig, ax = plt.subplots()
-    fig.set_size_inches(SHEET_W * scale, SHEET_H * scale)
-    ax.set_xlim(0, SHEET_W)
-    ax.set_ylim(0, SHEET_H)
-    ax.set_aspect('equal')
+    for idx, placements in enumerate(sheets):
+        scale_w = MAX_DISPLAY_WIDTH / SHEET_W
+        scale_h = MAX_DISPLAY_HEIGHT / SHEET_H
+        scale = min(scale_w, scale_h)
 
-    # Sheet outline
-    ax.add_patch(
-        patches.Rectangle((0, 0), SHEET_W, SHEET_H, linewidth=2, edgecolor="black", facecolor="#f0f0f0")
-    )
+        fig, ax = plt.subplots()
+        fig.set_size_inches(SHEET_W * scale, SHEET_H * scale)
+        ax.set_xlim(0, SHEET_W)
+        ax.set_ylim(0, SHEET_H)
+        ax.set_aspect('equal')
 
-    # Draw all cuts
-    for idx, (x, y, w, h) in enumerate(placements):
+        # Sheet outline
         ax.add_patch(
-            patches.Rectangle((x, y), w, h, linewidth=1, edgecolor="white", facecolor="#3b82f6")
+            patches.Rectangle((0, 0), SHEET_W, SHEET_H, linewidth=2, edgecolor="black", facecolor="#f0f0f0")
         )
-        ax.text(x + w/2, y + h/2, f"{w:g}x{h:g}", ha="center", va="center", fontsize=8, color="white", fontweight="bold")
 
-    ax.set_title(f"Sheet {SHEET_W}x{SHEET_H}")
-    ax.axis("off")
-    return fig
+        # Draw all cuts
+        for x, y, w, h in placements:
+            ax.add_patch(
+                patches.Rectangle((x, y), w, h, linewidth=1, edgecolor="white", facecolor="#3b82f6")
+            )
+            ax.text(x + w/2, y + h/2, f"{w:g}x{h:g}", ha="center", va="center",
+                    fontsize=8, color="white", fontweight="bold")
+
+        ax.set_title(f"Sheet #{idx+1} ({SHEET_W}x{SHEET_H})")
+        ax.axis("off")
+        figs.append(fig)
+    return figs
 
 # --------------------------------------------------
 # MAIN EXECUTION
 # --------------------------------------------------
 if st.session_state.cut_list:
     if st.button("Calculate Optimization"):
-        with st.spinner("Placing cuts on sheet..."):
-            placements = place_cuts_row_by_row(st.session_state.cut_list, sheet_w, sheet_h)
-            if placements:
-                fig = draw_sheet(placements, sheet_w, sheet_h)
-                st.pyplot(fig)
+        with st.spinner("Placing cuts across sheets..."):
+            sheets = place_cuts_multi_sheet(st.session_state.cut_list, sheet_w, sheet_h)
+            figs = draw_sheets_multi(sheets, sheet_w, sheet_h)
 
-                # Summary
-                total_used = sum(w*h for x,y,w,h in placements)
-                total_area = sheet_w*sheet_h
-                utilization = 100 * total_used / total_area
-                st.metric("Sheet Utilization", f"{utilization:.2f}%", f"Waste: {100 - utilization:.2f}%")
+            total_packed = sum(len(sheet) for sheet in sheets)
+            st.success(f"Optimization complete: {total_packed} pieces packed across {len(sheets)} sheet(s).")
+
+            # Overall utilization summary
+            total_used = sum(w*h for sheet in sheets for x,y,w,h in sheet)
+            total_area = sheet_w*sheet_h*len(sheets)
+            utilization = 100 * total_used / total_area
+            st.metric("Overall Utilization", f"{utilization:.2f}%", f"Waste: {100 - utilization:.2f}%")
+
+            # Display all sheets
+            st.header("🖼️ Cutting Plan Visualizations")
+            for i, fig in enumerate(figs):
+                st.pyplot(fig)
 else:
     st.info("Set sheet dimensions, then upload a file or add pieces to start optimization.")
