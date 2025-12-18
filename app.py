@@ -99,20 +99,32 @@ if st.session_state.cut_list:
 # --------------------------------------------------
 # PACKING SOLVER
 # --------------------------------------------------
+from rectpack import MaxRectsBssf
+
 def solve_packing(cuts, SHEET_W, SHEET_H):
-    packer = newPacker(
-        mode=PackingMode.Offline,
-        rotation=True
+    # Sort pieces by area (largest first)
+    sorted_cuts = sorted(
+        enumerate(cuts),
+        key=lambda x: x[1][0] * x[1][1],
+        reverse=True
     )
 
-    for _ in range(100):
+    packer = newPacker(
+        mode=PackingMode.Offline,
+        rotation=True,
+        pack_algo=MaxRectsBssf
+    )
+
+    # Fewer bins = better behavior
+    for _ in range(10):
         packer.add_bin(SHEET_W, SHEET_H)
 
-    for i, (w, h) in enumerate(cuts):
-        packer.add_rect(w, h, rid=i)
+    for rid, (w, h) in sorted_cuts:
+        packer.add_rect(w, h, rid=rid)
 
     packer.pack()
     return packer
+
 
 # --------------------------------------------------
 # VISUALIZATION
@@ -259,3 +271,4 @@ else:
         "Set sheet dimensions, then upload a file or add pieces "
         "to start optimization."
     )
+
