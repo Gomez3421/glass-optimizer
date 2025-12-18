@@ -15,8 +15,8 @@ st.markdown("Enter cuts manually or upload a list. **Sheet dimensions are custom
 # SIDEBAR INPUTS
 # --------------------------------------------------
 st.sidebar.header("1. Sheet Dimensions")
-sheet_w = st.sidebar.number_input("Sheet Width (in)", min_value=1.0, value=72.0)
-sheet_h = st.sidebar.number_input("Sheet Height (in)", min_value=1.0, value=84.0)
+sheet_w = st.sidebar.number_input("Sheet Width (in)", min_value=1.0, value=84.0)
+sheet_h = st.sidebar.number_input("Sheet Height (in)", min_value=1.0, value=72.0)
 
 st.sidebar.markdown("---")
 st.sidebar.header("2. Upload File (Optional)")
@@ -88,7 +88,7 @@ if st.session_state.cut_list:
 # --------------------------------------------------
 # PACKING SOLVER WITH INTEGER SCALING
 # --------------------------------------------------
-SCALE = 10  # Multiply dimensions to avoid floating point issues
+SCALE = 100  # Multiply dimensions to avoid floating point issues
 
 def solve_packing(cuts, SHEET_W, SHEET_H):
     # Convert all dimensions to integers
@@ -105,16 +105,16 @@ def solve_packing(cuts, SHEET_W, SHEET_H):
     for rid, (w, h) in sorted_cuts:
         packer.add_rect(w, h, rid=rid)
 
-    # Add initial bin
+    # Add first bin
     packer.add_bin(sheet_w_int, sheet_h_int)
     packer.pack()
 
     # Dynamically add new bins for leftover pieces
-    leftovers = [r for abin in packer for r in abin if not abin]
-    while leftovers:
+    leftover_rects = [r for abin in packer for r in abin if not abin]
+    while leftover_rects:
         packer.add_bin(sheet_w_int, sheet_h_int)
         packer.pack()
-        leftovers = [r for abin in packer for r in abin if not abin]
+        leftover_rects = [r for abin in packer for r in abin if not abin]
 
     return packer
 
