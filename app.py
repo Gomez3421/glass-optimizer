@@ -1,7 +1,7 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from rectpack import newPacker, PackingMode, GuillotineBssf
+from rectpack import newPacker, PackingMode, MaxRectsBssf
 import pandas as pd
 
 # --------------------------------------------------
@@ -99,7 +99,7 @@ def solve_packing(cuts, SHEET_W, SHEET_H):
     # Sort by area (largest first)
     sorted_cuts = sorted(enumerate(cuts_int), key=lambda x: x[1][0]*x[1][1], reverse=True)
 
-    packer = newPacker(mode=PackingMode.Offline, rotation=True, pack_algo=GuillotineBssf)
+    packer = newPacker(mode=PackingMode.Offline, rotation=True, pack_algo=MaxRectsBssf)
 
     # Add rectangles
     for rid, (w, h) in sorted_cuts:
