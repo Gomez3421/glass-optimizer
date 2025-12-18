@@ -98,7 +98,6 @@ if st.session_state.cut_list:
 
 # --------------------------------------------------
 # PACKING SOLVER
-# --------------------------------------------------
 from rectpack import MaxRectsBssf
 
 def solve_packing(cuts, SHEET_W, SHEET_H):
@@ -125,8 +124,6 @@ def solve_packing(cuts, SHEET_W, SHEET_H):
     packer.pack()
     return packer
 
-
-# --------------------------------------------------
 # VISUALIZATION
 # --------------------------------------------------
 def draw_results(packer, SHEET_W, SHEET_H, original_cuts):
@@ -271,4 +268,5 @@ else:
         "Set sheet dimensions, then upload a file or add pieces "
         "to start optimization."
     )
+
 
