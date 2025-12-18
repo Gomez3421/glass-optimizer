@@ -1,14 +1,13 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from rectpack import newPacker, PackingMode
+from rectpack import newPacker, PackingMode, MaxRectsBssf
 import pandas as pd
 
 # --------------------------------------------------
 # PAGE CONFIG
 # --------------------------------------------------
 st.set_page_config(page_title="Glass Optimizer", layout="wide")
-
 st.title("🪟 Sheet Stock Optimizer")
 st.markdown("Enter cuts manually or upload a list. **Sheet dimensions are customizable.**")
 
@@ -20,10 +19,8 @@ sheet_w = st.sidebar.number_input("Sheet Width (in)", min_value=1.0, value=72.0)
 sheet_h = st.sidebar.number_input("Sheet Height (in)", min_value=1.0, value=84.0)
 
 st.sidebar.markdown("---")
-
 st.sidebar.header("2. Upload File (Optional)")
 uploaded_file = st.sidebar.file_uploader("Upload .txt or .csv", type=["txt", "csv"])
-
 st.sidebar.info(
     "Format: Width, Height, Qty\n"
     "Example:\n"
@@ -43,7 +40,6 @@ if "cut_list" not in st.session_state:
 if uploaded_file is not None:
     if st.sidebar.button("Process Uploaded File"):
         st.session_state.cut_list = []
-
         text = uploaded_file.getvalue().decode("utf-8")
         lines = text.splitlines()
         imported = 0
@@ -56,22 +52,15 @@ if uploaded_file is not None:
                 w = float(parts[0])
                 h = float(parts[1])
                 qty = int(parts[2]) if len(parts) > 2 else 1
-
                 for _ in range(qty):
                     st.session_state.cut_list.append((w, h))
                 imported += qty
             except ValueError:
                 continue
-
         st.sidebar.success(f"Imported {imported} pieces")
 
 st.sidebar.markdown("---")
-
-# --------------------------------------------------
-# MANUAL INPUT
-# --------------------------------------------------
 st.sidebar.header("3. Manual Add")
-
 with st.sidebar.form("manual_add"):
     c_w = st.number_input("Width", min_value=1.0, value=24.0)
     c_h = st.number_input("Height", min_value=1.0, value=24.0)
@@ -94,12 +83,11 @@ if st.session_state.cut_list:
 
     if st.sidebar.button("Clear All"):
         st.session_state.cut_list = []
-        st.rerun()
+        st.experimental_rerun()
 
 # --------------------------------------------------
 # PACKING SOLVER
-from rectpack import MaxRectsBssf
-
+# --------------------------------------------------
 def solve_packing(cuts, SHEET_W, SHEET_H):
     # Sort pieces by area (largest first)
     sorted_cuts = sorted(
@@ -114,16 +102,24 @@ def solve_packing(cuts, SHEET_W, SHEET_H):
         pack_algo=MaxRectsBssf
     )
 
-    # Fewer bins = better behavior
-    for _ in range(10):
-        packer.add_bin(SHEET_W, SHEET_H)
-
+    # Add rectangles
     for rid, (w, h) in sorted_cuts:
         packer.add_rect(w, h, rid=rid)
 
+    # Start with one bin
+    packer.add_bin(SHEET_W, SHEET_H)
     packer.pack()
+
+    # Add new bins dynamically for leftovers
+    leftovers = [r for abin in packer for r in abin if not abin]
+    while leftovers:
+        packer.add_bin(SHEET_W, SHEET_H)
+        packer.pack()
+        leftovers = [r for abin in packer for r in abin if not abin]
+
     return packer
 
+# --------------------------------------------------
 # VISUALIZATION
 # --------------------------------------------------
 def draw_results(packer, SHEET_W, SHEET_H, original_cuts):
@@ -177,7 +173,6 @@ def draw_results(packer, SHEET_W, SHEET_H, original_cuts):
             if w > 5 and h > 5:
                 rotated = (w != orig_w or h != orig_h)
                 label = f"{orig_w:g}x{orig_h:g}" + (" ↺" if rotated else "")
-
                 ax.text(
                     x + w / 2,
                     y + h / 2,
@@ -215,19 +210,8 @@ def draw_results(packer, SHEET_W, SHEET_H, original_cuts):
 if st.session_state.cut_list:
     if st.button("Calculate Optimization"):
         with st.spinner("Calculating optimal layout..."):
-            packer = solve_packing(
-                st.session_state.cut_list,
-                sheet_w,
-                sheet_h
-            )
-
-            figs, summary = draw_results(
-                packer,
-                sheet_w,
-                sheet_h,
-                st.session_state.cut_list
-            )
-
+            packer = solve_packing(st.session_state.cut_list, sheet_w, sheet_h)
+            figs, summary = draw_results(packer, sheet_w, sheet_h, st.session_state.cut_list)
             packed = sum(len(b) for b in packer)
 
             st.success(
@@ -244,7 +228,6 @@ if st.session_state.cut_list:
             if summary:
                 st.header("✨ Optimization Summary")
                 df = pd.DataFrame(summary)
-
                 total_used = df["Used Area (in²)"].sum()
                 total_stock = df["Total Area (in²)"].sum()
                 util = 100 * total_used / total_stock
@@ -268,5 +251,3 @@ else:
         "Set sheet dimensions, then upload a file or add pieces "
         "to start optimization."
     )
-
-
