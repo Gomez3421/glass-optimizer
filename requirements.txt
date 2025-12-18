@@ -2,3 +2,4 @@ streamlit
 rectpack
 matplotlib
 pandas
+openpyxl
