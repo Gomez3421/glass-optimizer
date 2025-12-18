@@ -1,7 +1,6 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from rectpack import newPacker, PackingMode, MaxRectsBssf
 import pandas as pd
 
 # --------------------------------------------------
@@ -79,123 +78,83 @@ if st.session_state.cut_list:
     st.sidebar.write("### Current List")
     st.sidebar.write(f"Total Pieces: **{len(st.session_state.cut_list)}**")
     st.sidebar.write(f"Total Required Area: **{total_area:,.2f} in²**")
-
     if st.sidebar.button("Clear All"):
         st.session_state.cut_list = []
         st.experimental_rerun()
 
 # --------------------------------------------------
-# PACKING SOLVER (force all cuts on one sheet)
+# GUARANTEED ROW-BY-ROW PLACEMENT
 # --------------------------------------------------
-SCALE = 100  # multiply dimensions to avoid floating-point issues
+def place_cuts_row_by_row(cuts, SHEET_W, SHEET_H):
+    # Sort cuts by height descending (to minimize vertical waste)
+    sorted_cuts = sorted(cuts, key=lambda x: max(x[0], x[1]), reverse=True)
 
-def solve_packing_one_sheet(cuts, SHEET_W, SHEET_H):
-    # Scale dimensions
-    cuts_int = [(int(w*SCALE), int(h*SCALE)) for w, h in cuts]
-    sheet_w_int = int(SHEET_W * SCALE)
-    sheet_h_int = int(SHEET_H * SCALE)
+    placements = []
+    y_offset = 0
+    row_height = 0
+    x_offset = 0
 
-    # Create packer
-    packer = newPacker(mode=PackingMode.Offline, rotation=True, pack_algo=MaxRectsBssf)
+    for w, h in sorted_cuts:
+        # Rotate if it fits better
+        if w > h and w > SHEET_W and h <= SHEET_W:
+            w, h = h, w
 
-    # Add a single sheet/bin
-    packer.add_bin(sheet_w_int, sheet_h_int)
+        if x_offset + w > SHEET_W:
+            # move to next row
+            x_offset = 0
+            y_offset += row_height
+            row_height = 0
 
-    # Add rectangles
-    for rid, (w, h) in enumerate(cuts_int):
-        packer.add_rect(w, h, rid=rid)
+        if y_offset + h > SHEET_H:
+            st.error(f"Cannot fit piece {w}x{h} on the sheet. Increase sheet size.")
+            continue
 
-    # Pack
-    packer.pack()
+        placements.append((x_offset, y_offset, w, h))
+        x_offset += w
+        row_height = max(row_height, h)
 
-    # Check if any pieces were unplaced
-    unplaced = [r for abin in packer for r in abin if not abin]
-    if unplaced:
-        st.warning("Heuristic could not place all pieces. Adjust sheet size or cut sizes.")
-
-    return packer
+    return placements
 
 # --------------------------------------------------
 # VISUALIZATION
 # --------------------------------------------------
-def draw_results(packer, SHEET_W, SHEET_H, original_cuts):
-    figures = []
-    summary = []
+def draw_sheet(placements, SHEET_W, SHEET_H):
+    fig, ax = plt.subplots()
+    fig.set_size_inches(8, 8 * (SHEET_H / SHEET_W))
+    ax.set_xlim(0, SHEET_W)
+    ax.set_ylim(0, SHEET_H)
 
-    for idx, abin in enumerate(packer):
-        if not abin:
-            continue
+    # Sheet outline
+    ax.add_patch(
+        patches.Rectangle((0, 0), SHEET_W, SHEET_H, linewidth=2, edgecolor="black", facecolor="#f0f0f0")
+    )
 
-        fig, ax = plt.subplots()
-        fig.set_size_inches(8, 8 * (SHEET_H / SHEET_W))
-        ax.set_xlim(0, SHEET_W)
-        ax.set_ylim(0, SHEET_H)
-
-        # Sheet outline
+    # Draw all cuts
+    for idx, (x, y, w, h) in enumerate(placements):
         ax.add_patch(
-            patches.Rectangle((0,0), SHEET_W, SHEET_H, linewidth=2, edgecolor="black", facecolor="#f0f0f0")
+            patches.Rectangle((x, y), w, h, linewidth=1, edgecolor="white", facecolor="#3b82f6")
         )
+        ax.text(x + w/2, y + h/2, f"{w:g}x{h:g}", ha="center", va="center", fontsize=8, color="white", fontweight="bold")
 
-        used_area = 0
-        count = 0
-
-        for rect in abin:
-            x, y = rect.x / SCALE, rect.y / SCALE
-            w, h = rect.width / SCALE, rect.height / SCALE
-            orig_w, orig_h = original_cuts[rect.rid]
-
-            used_area += w * h
-            count += 1
-
-            ax.add_patch(
-                patches.Rectangle((x, y), w, h, linewidth=1, edgecolor="white", facecolor="#3b82f6")
-            )
-
-            if w > 5 and h > 5:
-                rotated = (w != orig_w or h != orig_h)
-                label = f"{orig_w:g}x{orig_h:g}" + (" ↺" if rotated else "")
-                ax.text(x + w/2, y + h/2, label, ha="center", va="center", fontsize=8, color="white", fontweight="bold")
-
-        total_area = SHEET_W * SHEET_H
-        waste = 100 * (1 - used_area / total_area)
-        summary.append({
-            "Sheet #": idx + 1,
-            "Items Packed": count,
-            "Used Area (in²)": used_area,
-            "Total Area (in²)": total_area,
-            "Utilization": f"{100 - waste:.1f}%",
-            "Waste": f"{waste:.1f}%"
-        })
-
-        ax.set_title(f"Sheet #{idx+1} ({SHEET_W}x{SHEET_H} | Waste: {waste:.1f}%)")
-        ax.axis("off")
-        figures.append(fig)
-
-    return figures, summary
+    ax.set_title(f"Sheet {SHEET_W}x{SHEET_H}")
+    ax.axis("off")
+    return fig
 
 # --------------------------------------------------
 # MAIN EXECUTION
 # --------------------------------------------------
 if st.session_state.cut_list:
     if st.button("Calculate Optimization"):
-        with st.spinner("Calculating optimal layout..."):
-            packer = solve_packing_one_sheet(st.session_state.cut_list, sheet_w, sheet_h)
-            figs, summary = draw_results(packer, sheet_w, sheet_h, st.session_state.cut_list)
-            packed = sum(len(b) for b in packer)
+        with st.spinner("Placing cuts on sheet..."):
+            placements = place_cuts_row_by_row(st.session_state.cut_list, sheet_w, sheet_h)
+            if placements:
+                fig = draw_sheet(placements, sheet_w, sheet_h)
+                st.pyplot(fig)
 
-            st.success(f"Optimization complete: {packed} of {len(st.session_state.cut_list)} pieces packed on one sheet.")
-
-            if summary:
-                st.header("✨ Optimization Summary")
-                df = pd.DataFrame(summary)
-                total_used = df["Used Area (in²)"].sum()
-                total_stock = df["Total Area (in²)"].sum()
-                util = 100 * total_used / total_stock
-
-                st.metric(f"Overall Utilization (1 Sheet)", f"{util:.2f}%", f"Waste: {100 - util:.2f}%")
-                st.dataframe(df.set_index("Sheet #"), use_container_width=True)
-
-            st.header("🖼️ Cutting Plan Visualization")
-            st.pyplot(figs[0])
+                # Summary
+                total_used = sum(w*h for x,y,w,h in placements)
+                total_area = sheet_w*sheet_h
+                utilization = 100 * total_used / total_area
+                st.metric("Sheet Utilization", f"{utilization:.2f}%", f"Waste: {100 - utilization:.2f}%")
 else:
     st.info("Set sheet dimensions, then upload a file or add pieces to start optimization.")
