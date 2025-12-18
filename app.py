@@ -43,7 +43,6 @@ if uploaded_file is not None:
         text = uploaded_file.getvalue().decode("utf-8")
         lines = text.splitlines()
         imported = 0
-
         for line in lines:
             if not line.strip():
                 continue
@@ -86,35 +85,33 @@ if st.session_state.cut_list:
         st.experimental_rerun()
 
 # --------------------------------------------------
-# PACKING SOLVER WITH INTEGER SCALING
+# PACKING SOLVER (force all cuts on one sheet)
 # --------------------------------------------------
-SCALE = 100  # Multiply dimensions to avoid floating point issues
+SCALE = 100  # multiply dimensions to avoid floating-point issues
 
-def solve_packing(cuts, SHEET_W, SHEET_H):
-    # Convert all dimensions to integers
+def solve_packing_one_sheet(cuts, SHEET_W, SHEET_H):
+    # Scale dimensions
     cuts_int = [(int(w*SCALE), int(h*SCALE)) for w, h in cuts]
     sheet_w_int = int(SHEET_W * SCALE)
     sheet_h_int = int(SHEET_H * SCALE)
 
-    # Sort by area (largest first)
-    sorted_cuts = sorted(enumerate(cuts_int), key=lambda x: x[1][0]*x[1][1], reverse=True)
-
+    # Create packer
     packer = newPacker(mode=PackingMode.Offline, rotation=True, pack_algo=MaxRectsBssf)
 
+    # Add a single sheet/bin
+    packer.add_bin(sheet_w_int, sheet_h_int)
+
     # Add rectangles
-    for rid, (w, h) in sorted_cuts:
+    for rid, (w, h) in enumerate(cuts_int):
         packer.add_rect(w, h, rid=rid)
 
-    # Add first bin
-    packer.add_bin(sheet_w_int, sheet_h_int)
+    # Pack
     packer.pack()
 
-    # Dynamically add new bins for leftover pieces
-    leftover_rects = [r for abin in packer for r in abin if not abin]
-    while leftover_rects:
-        packer.add_bin(sheet_w_int, sheet_h_int)
-        packer.pack()
-        leftover_rects = [r for abin in packer for r in abin if not abin]
+    # Check if any pieces were unplaced
+    unplaced = [r for abin in packer for r in abin if not abin]
+    if unplaced:
+        st.warning("Heuristic could not place all pieces. Adjust sheet size or cut sizes.")
 
     return packer
 
@@ -182,14 +179,11 @@ def draw_results(packer, SHEET_W, SHEET_H, original_cuts):
 if st.session_state.cut_list:
     if st.button("Calculate Optimization"):
         with st.spinner("Calculating optimal layout..."):
-            packer = solve_packing(st.session_state.cut_list, sheet_w, sheet_h)
+            packer = solve_packing_one_sheet(st.session_state.cut_list, sheet_w, sheet_h)
             figs, summary = draw_results(packer, sheet_w, sheet_h, st.session_state.cut_list)
             packed = sum(len(b) for b in packer)
 
-            st.success(f"Optimization complete: {packed} of {len(st.session_state.cut_list)} pieces packed using {len(figs)} sheet(s).")
-
-            if packed < len(st.session_state.cut_list):
-                st.error(f"{len(st.session_state.cut_list) - packed} piece(s) could not be packed.")
+            st.success(f"Optimization complete: {packed} of {len(st.session_state.cut_list)} pieces packed on one sheet.")
 
             if summary:
                 st.header("✨ Optimization Summary")
@@ -198,13 +192,10 @@ if st.session_state.cut_list:
                 total_stock = df["Total Area (in²)"].sum()
                 util = 100 * total_used / total_stock
 
-                st.metric(f"Overall Utilization ({len(figs)} Sheets)", f"{util:.2f}%", f"Waste: {100 - util:.2f}%")
+                st.metric(f"Overall Utilization (1 Sheet)", f"{util:.2f}%", f"Waste: {100 - util:.2f}%")
                 st.dataframe(df.set_index("Sheet #"), use_container_width=True)
 
-            st.header("🖼️ Cutting Plan Visualizations")
-            cols = st.columns(2)
-            for i, fig in enumerate(figs):
-                with cols[i % 2]:
-                    st.pyplot(fig)
+            st.header("🖼️ Cutting Plan Visualization")
+            st.pyplot(figs[0])
 else:
     st.info("Set sheet dimensions, then upload a file or add pieces to start optimization.")
