@@ -22,7 +22,12 @@ sheet_h = st.sidebar.number_input("Sheet Height (in)", min_value=1.0, value=72.0
 
 st.sidebar.markdown("---")
 st.sidebar.header("2. Upload File (Optional)")
-uploaded_file = st.sidebar.file_uploader("Upload .txt or .csv", type=["txt", "csv"])
+uploaded_files = st.sidebar.file_uploader(
+    "Upload .txt or .csv",
+    type=["txt", "csv"],
+    accept_multiple_files=True
+)
+
 
 # --------------------------------------------------
 # SESSION STATE
@@ -33,36 +38,38 @@ if "cut_list" not in st.session_state:
 # --------------------------------------------------
 # FILE PROCESSING (BULLETPROOF TXT PARSER)
 # --------------------------------------------------
-if uploaded_file is not None:
-    if st.sidebar.button("Process Uploaded File"):
+if uploaded_files:
+    if st.sidebar.button("Process Uploaded Files"):
         st.session_state.cut_list = []
 
-        text = uploaded_file.getvalue().decode("utf-8")
+        for uploaded_file in uploaded_files:
+            text = uploaded_file.getvalue().decode("utf-8")
 
-        for line in text.splitlines():
-            line = line.strip()
+            for line in text.splitlines():
+                line = line.strip()
 
-            # Skip junk / headers / comments
-            if not line or line.startswith(("#", "*", "<", "COMMENTS")):
-                continue
-            if line.startswith('"V"') or line.startswith('"H"'):
-                continue
-
-            parts = [p.strip().strip('"') for p in line.split(",")]
-
-            # We only want lines that actually contain width & height
-            # Format: ..., width, height, ...
-            if len(parts) >= 6:
-                try:
-                    width = float(parts[4])
-                    height = float(parts[5])
-
-                    # Reverse order (as you requested earlier)
-                    st.session_state.cut_list.append((height, width))
-                except ValueError:
+                # Skip junk / headers
+                if not line or line.startswith(("#", "*", "<", "COMMENTS")):
+                    continue
+                if line.startswith('"V"') or line.startswith('"H"'):
                     continue
 
-        st.sidebar.success(f"File processed ({len(st.session_state.cut_list)} cuts found)")
+                parts = [p.strip().strip('"') for p in line.split(",")]
+
+                if len(parts) >= 6:
+                    try:
+                        width = float(parts[4])
+                        height = float(parts[5])
+
+                        # Reverse order (your requirement)
+                        st.session_state.cut_list.append((height, width))
+                    except ValueError:
+                        continue
+
+        st.sidebar.success(
+            f"{len(uploaded_files)} file(s) processed — {len(st.session_state.cut_list)} total cuts"
+        )
+
 
 # --------------------------------------------------
 # MANUAL INPUT
@@ -193,4 +200,5 @@ if st.session_state.cut_list:
 
 else:
     st.info("Add cuts to begin optimization.")
+
 
