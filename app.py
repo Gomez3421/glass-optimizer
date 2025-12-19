@@ -31,19 +31,38 @@ if "cut_list" not in st.session_state:
     st.session_state.cut_list = []
 
 # --------------------------------------------------
-# FILE PROCESSING
+# FILE PROCESSING (BULLETPROOF TXT PARSER)
 # --------------------------------------------------
 if uploaded_file is not None:
     if st.sidebar.button("Process Uploaded File"):
         st.session_state.cut_list = []
-        for line in uploaded_file.getvalue().decode("utf-8").splitlines():
-            if not line.strip():
+
+        text = uploaded_file.getvalue().decode("utf-8")
+
+        for line in text.splitlines():
+            line = line.strip()
+
+            # Skip junk / headers / comments
+            if not line or line.startswith(("#", "*", "<", "COMMENTS")):
                 continue
-            w, h, *q = [x.strip() for x in line.split(",")]
-            qty = int(q[0]) if q else 1
-            for _ in range(qty):
-                st.session_state.cut_list.append((float(w), float(h)))
-        st.sidebar.success("File processed")
+            if line.startswith('"V"') or line.startswith('"H"'):
+                continue
+
+            parts = [p.strip().strip('"') for p in line.split(",")]
+
+            # We only want lines that actually contain width & height
+            # Format: ..., width, height, ...
+            if len(parts) >= 6:
+                try:
+                    width = float(parts[4])
+                    height = float(parts[5])
+
+                    # Reverse order (as you requested earlier)
+                    st.session_state.cut_list.append((height, width))
+                except ValueError:
+                    continue
+
+        st.sidebar.success(f"File processed ({len(st.session_state.cut_list)} cuts found)")
 
 # --------------------------------------------------
 # MANUAL INPUT
@@ -174,3 +193,4 @@ if st.session_state.cut_list:
 
 else:
     st.info("Add cuts to begin optimization.")
+
